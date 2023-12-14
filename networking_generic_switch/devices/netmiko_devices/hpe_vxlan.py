@@ -26,13 +26,14 @@ class HpeComware(netmiko_devices.NetmikoSwitch):
 
     PLUG_PORT_TO_NETWORK = (
         'interface {port}',
-        'port link-type access',
-        'port access vlan {segmentation_id}'
+        'service-instance {segmentation_id}',
+        'encapsulation untagged',
+        'xconnect vsi {segmentation_id} access-mode ethernet',
     )
 
     DELETE_PORT = (
         'interface {port}',
-        'undo port access vlan'
+        'undo service-instance {segmentation_id}',
     )
 
     ENABLE_PORT = (

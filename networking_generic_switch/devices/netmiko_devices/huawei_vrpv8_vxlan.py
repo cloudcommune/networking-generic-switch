@@ -1,17 +1,3 @@
-# Copyright 2016 Huawei Technologies Co., Ltd.
-#
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
-#    not use this file except in compliance with the License. You may obtain
-#    a copy of the License at
-#
-#         http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-#    License for the specific language governing permissions and limitations
-#    under the License.
-
 from networking_generic_switch.devices import netmiko_devices
 
 
@@ -28,28 +14,33 @@ class Huawei(netmiko_devices.NetmikoSwitch):
     )
 
     PLUG_PORT_TO_NETWORK = (
-        'interface {port}',
-        'port link-type access',
-        'port default vlan {segmentation_id}',
+        'interface {port}.{segmentation_id} mode l2',
+        'encapsulation untag',
+        'bridge-domain {segmentation_id}',
+        'commit',
+        'interface Nve1',
+        'vni {segmentation_id} head-end peer-list protocol bgp',
         'commit',
     )
 
     DELETE_PORT = (
-        'interface {port}',
-        'undo port default vlan {segmentation_id}',
+        'undo interface {port}.{segmentation_id}',
+        'commit',
+        'interface Nve1',
+        'undo vni {segmentation_id} head-end peer-list protocol bgp',
         'commit',
     )
 
     ENABLE_PORT = (
         'interface {port}',
         'undo shutdown',
-        'commit'
+        'commit',
     )
 
     DISABLE_PORT = (
         'interface {port}',
         'shutdown',
-        'commit'
+        'commit',
     )
 
     def disable_port(self, port):

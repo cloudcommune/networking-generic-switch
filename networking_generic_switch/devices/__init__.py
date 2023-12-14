@@ -120,3 +120,9 @@ class GenericSwitchDevice(object):
     @abc.abstractmethod
     def delete_port(self, port_id, segmentation_id):
         pass
+
+    def disable_port(self, port_id):
+        pass
+
+    def enable_port(self, port_id):
+        pass

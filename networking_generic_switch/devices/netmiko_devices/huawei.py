@@ -35,3 +35,21 @@ class Huawei(netmiko_devices.NetmikoSwitch):
         'interface {port}',
         'undo port default vlan {segmentation_id}',
     )
+
+    ENABLE_PORT = (
+        'interface {port}',
+        'undo shutdown'
+    )
+
+    DISABLE_PORT = (
+        'interface {port}',
+        'shutdown'
+    )
+
+    def disable_port(self, port):
+        cmds = self._format_commands(self.DISABLE_PORT, port=port)
+        return self.send_commands_to_device(cmds)
+
+    def enable_port(self, port):
+        cmds = self._format_commands(self.ENABLE_PORT, port=port)
+        return self.send_commands_to_device(cmds)

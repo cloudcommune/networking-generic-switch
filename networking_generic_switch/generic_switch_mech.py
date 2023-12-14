@@ -12,14 +12,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sys
 
 from neutron.db import provisioning_blocks
 from neutron_lib.api.definitions import portbindings
 from neutron_lib.callbacks import resources
 from neutron_lib.plugins.ml2 import api
 from oslo_log import log as logging
-import six
 
 from networking_generic_switch import config as gsw_conf
 from networking_generic_switch import devices
@@ -45,7 +43,6 @@ class GenericSwitchDriver(api.MechanismDriver):
         for switch_info, device_cfg in gsw_devices.items():
             switch = devices.device_manager(device_cfg)
             self.switches[switch_info] = switch
-
         LOG.info('Devices %s have been loaded', self.switches.keys())
         if not self.switches:
             LOG.error('No devices have been loaded')
@@ -74,29 +71,7 @@ class GenericSwitchDriver(api.MechanismDriver):
         drastically affect performance. Raising an exception will
         cause the deletion of the resource.
         """
-
-        network = context.current
-        network_id = network['id']
-        provider_type = network['provider:network_type']
-        segmentation_id = network['provider:segmentation_id']
-        physnet = network['provider:physical_network']
-
-        if provider_type == 'vlan' and segmentation_id:
-            # Create vlan on all switches from this driver
-            for switch_name, switch in self._get_devices_by_physnet(physnet):
-                try:
-                    switch.add_network(segmentation_id, network_id)
-                except Exception as e:
-                    LOG.error("Failed to create network %(net_id)s "
-                              "on device: %(switch)s, reason: %(exc)s",
-                              {'net_id': network_id,
-                               'switch': switch_name,
-                               'exc': e})
-                    raise
-                else:
-                    LOG.info('Network %(net_id)s has been added on device '
-                             '%(device)s', {'net_id': network['id'],
-                                            'device': switch_name})
+        pass
 
     def update_network_precommit(self, context):
         """Update resources of a network.
@@ -160,31 +135,7 @@ class GenericSwitchDriver(api.MechanismDriver):
         expected, and will not prevent the resource from being
         deleted.
         """
-        network = context.current
-        provider_type = network['provider:network_type']
-        segmentation_id = network['provider:segmentation_id']
-        physnet = network['provider:physical_network']
-
-        if provider_type == 'vlan' and segmentation_id:
-            # Delete vlan on all switches from this driver
-            exc_info = None
-            for switch_name, switch in self._get_devices_by_physnet(physnet):
-                try:
-                    switch.del_network(segmentation_id, network['id'])
-                except Exception as e:
-                    LOG.error("Failed to delete network %(net_id)s "
-                              "on device: %(switch)s, reason: %(exc)s",
-                              {'net_id': network['id'],
-                               'switch': switch_name,
-                               'exc': e})
-                    # Save any exceptions for later reraise.
-                    exc_info = sys.exc_info()
-                else:
-                    LOG.info('Network %(net_id)s has been deleted on device '
-                             '%(device)s', {'net_id': network['id'],
-                                            'device': switch_name})
-            if exc_info:
-                six.reraise(*exc_info)
+        pass
 
     def create_subnet_precommit(self, context):
         """Allocate resources for a new subnet.
@@ -342,16 +293,44 @@ class GenericSwitchDriver(api.MechanismDriver):
                 'local_link_information')
             if not local_link_information:
                 return
-            switch_info = local_link_information[0].get('switch_info')
-            switch_id = local_link_information[0].get('switch_id')
-            switch = device_utils.get_switch_device(
-                self.switches, switch_info=switch_info,
-                ngs_mac_address=switch_id)
-            if not switch:
-                return
+            for link in local_link_information:
+                switch_info = link.get('switch_info')
+                switch_id = link.get('switch_id')
+                port_id = link.get('port_id')
+                new_status = context.current['admin_state_up']
+                org_status = context.original['admin_state_up']
+                if new_status != org_status and port['status'] == 'ACTIVE':
+                    switch = device_utils.get_switch_device(
+                        self.switches, switch_info=switch_info,
+                        ngs_mac_address=switch_id)
+                    if not switch:
+                        return
+                    if port['admin_state_up']:
+                        try:
+                            switch.enable_port(port_id)
+                        except Exception as e:
+                            LOG.error(
+                                "Failed enable port %(port)s for %(device)s ",
+                                {'port_id': port['id'], 'device': switch_info}
+                            )
+                            raise e
+                        LOG.info(
+                            'Port %(port)s has been enable', {'port': port}
+                            )
+                    else:
+                        try:
+                            switch.disable_port(port_id)
+                        except Exception as e:
+                            LOG.error(
+                                "Failed disable port %(port)s for %(device)s ",
+                                {'port_id': port['id'], 'device': switch_info}
+                            )
+                            raise e
+                    LOG.info('Port %(port)s has been enable', {'port': port})
             provisioning_blocks.provisioning_complete(
                 context._plugin_context, port['id'], resources.PORT,
                 GENERIC_SWITCH_ENTITY)
+
         elif self._is_port_bound(context.original):
             # The port has been unbound. This will cause the local link
             # information to be lost, so remove the port from the network on
@@ -434,42 +413,46 @@ class GenericSwitchDriver(api.MechanismDriver):
         binding_profile = port['binding:profile']
         local_link_information = binding_profile.get('local_link_information')
         if self._is_port_supported(port) and local_link_information:
-            switch_info = local_link_information[0].get('switch_info')
-            switch_id = local_link_information[0].get('switch_id')
-            switch = device_utils.get_switch_device(
-                self.switches, switch_info=switch_info,
-                ngs_mac_address=switch_id)
-            if not switch:
-                return
-            network = context.network.current
-            physnet = network['provider:physical_network']
-            switch_physnets = switch._get_physical_networks()
-            if switch_physnets and physnet not in switch_physnets:
-                LOG.error("Cannot bind port %(port)s as device %(device)s is "
-                          "not on physical network %(physnet)",
-                          {'port_id': port['id'], 'device': switch_info,
-                           'physnet': physnet})
-                return
-            port_id = local_link_information[0].get('port_id')
-            segments = context.segments_to_bind
-            # If segmentation ID is None, set vlan 1
-            segmentation_id = segments[0].get('segmentation_id') or '1'
-            provisioning_blocks.add_provisioning_component(
-                context._plugin_context, port['id'], resources.PORT,
-                GENERIC_SWITCH_ENTITY)
-            LOG.debug("Putting port {port} on {switch_info} to vlan: "
-                      "{segmentation_id}".format(
-                          port=port_id,
-                          switch_info=switch_info,
-                          segmentation_id=segmentation_id))
-            # Move port to network
-            switch.plug_port_to_network(port_id, segmentation_id)
-            LOG.info("Successfully bound port %(port_id)s in segment "
-                     "%(segment_id)s on device %(device)s",
-                     {'port_id': port['id'], 'device': switch_info,
-                      'segment_id': segmentation_id})
-            context.set_binding(segments[0][api.ID],
-                                portbindings.VIF_TYPE_OTHER, {})
+            for link in local_link_information:
+                switch_info = link.get('switch_info')
+                switch_id = link.get('switch_id')
+                switch = device_utils.get_switch_device(
+                    self.switches, switch_info=switch_info,
+                    ngs_mac_address=switch_id)
+                if not switch:
+                    return
+                network = context.network.current
+                physnet = network['provider:physical_network']
+                switch_physnets = switch._get_physical_networks()
+                if switch_physnets and physnet not in switch_physnets:
+                    LOG.error("Cannot bind port %(port)s as device %(device)s "
+                              "is not on physical network %(physnet)",
+                              {'port_id': port['id'], 'device': switch_info,
+                               'physnet': physnet})
+                    return
+                port_id = link.get('port_id')
+                segments = context.segments_to_bind
+                # If segmentation ID is None, set vlan 1
+                segmentation_id = segments[0].get('segmentation_id') or '1'
+                provision_vlan = binding_profile.get('provision_vlan')
+                if provision_vlan:
+                    segmentation_id = provision_vlan
+                provisioning_blocks.add_provisioning_component(
+                    context._plugin_context, port['id'], resources.PORT,
+                    GENERIC_SWITCH_ENTITY)
+                LOG.debug("Putting port {port} on {switch_info} to vlan: "
+                          "{segmentation_id}".format(
+                              port=port_id,
+                              switch_info=switch_info,
+                              segmentation_id=segmentation_id))
+                # Move port to network
+                switch.plug_port_to_network(port_id, segmentation_id)
+                LOG.info("Successfully bound port %(port_id)s in segment "
+                         "%(segment_id)s on device %(device)s",
+                         {'port_id': port['id'], 'device': switch_info,
+                          'segment_id': segmentation_id})
+                context.set_binding(segments[0][api.ID],
+                                    portbindings.VIF_TYPE_OTHER, {})
 
     @staticmethod
     def _is_port_supported(port):
@@ -512,34 +495,38 @@ class GenericSwitchDriver(api.MechanismDriver):
         local_link_information = binding_profile.get('local_link_information')
         if not local_link_information:
             return
-        switch_info = local_link_information[0].get('switch_info')
-        switch_id = local_link_information[0].get('switch_id')
-        switch = device_utils.get_switch_device(
-            self.switches, switch_info=switch_info,
-            ngs_mac_address=switch_id)
-        if not switch:
-            return
-        port_id = local_link_information[0].get('port_id')
-        # If segmentation ID is None, set vlan 1
-        segmentation_id = network.get('provider:segmentation_id') or '1'
-        LOG.debug("Unplugging port {port} on {switch_info} from vlan: "
-                  "{segmentation_id}".format(
-                      port=port_id,
-                      switch_info=switch_info,
-                      segmentation_id=segmentation_id))
-        try:
-            switch.delete_port(port_id, segmentation_id)
-        except Exception as e:
-            LOG.error("Failed to unplug port %(port_id)s "
-                      "on device: %(switch)s from network %(net_id)s "
-                      "reason: %(exc)s",
-                      {'port_id': port['id'], 'net_id': network['id'],
-                       'switch': switch_info, 'exc': e})
-            raise e
-        LOG.info('Port %(port_id)s has been unplugged from network '
-                 '%(net_id)s on device %(device)s',
-                 {'port_id': port['id'], 'net_id': network['id'],
-                  'device': switch_info})
+        for link in local_link_information:
+            switch_info = link.get('switch_info')
+            switch_id = link.get('switch_id')
+            switch = device_utils.get_switch_device(
+                self.switches, switch_info=switch_info,
+                ngs_mac_address=switch_id)
+            if not switch:
+                return
+            port_id = link.get('port_id')
+            # If segmentation ID is None, set vlan 1
+            segmentation_id = network.get('provider:segmentation_id') or '1'
+            provision_vlan = binding_profile.get('provision_vlan')
+            if provision_vlan:
+                segmentation_id = provision_vlan
+            LOG.debug("Unplugging port {port} on {switch_info} from vlan: "
+                      "{segmentation_id}".format(
+                          port=port_id,
+                          switch_info=switch_info,
+                          segmentation_id=segmentation_id))
+            try:
+                switch.delete_port(port_id, segmentation_id)
+            except Exception as e:
+                LOG.error("Failed to unplug port %(port_id)s "
+                          "on device: %(switch)s from network %(net_id)s "
+                          "reason: %(exc)s",
+                          {'port_id': port['id'], 'net_id': network['id'],
+                           'switch': switch_info, 'exc': e})
+                raise e
+            LOG.info('Port %(port_id)s has been unplugged from network '
+                     '%(net_id)s on device %(device)s',
+                     {'port_id': port['id'], 'net_id': network['id'],
+                      'device': switch_info})
 
     def _get_devices_by_physnet(self, physnet):
         """Generator yielding switches on a particular physical network.
