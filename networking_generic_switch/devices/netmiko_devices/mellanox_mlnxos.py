@@ -17,22 +17,17 @@ from networking_generic_switch.devices import netmiko_devices
 
 class MellanoxMlnxOS(netmiko_devices.NetmikoSwitch):
     ADD_NETWORK = (
-        'vlan {segmentation_id}',
-        'name {network_id}',
     )
 
     DELETE_NETWORK = (
-        'no vlan {segmentation_id}',
     )
 
     PLUG_PORT_TO_NETWORK = (
-        'interface ethernet {port}',
-        'switchport mode access',
-        'switchport access vlan {segmentation_id}',
+        'nv set interface {port} bridge domain br_default access {segmentation_id}',
+        'nv conf apply'
     )
 
     DELETE_PORT = (
-        'interface ethernet {port}',
-        'no switchport access vlan',
-        'no switchport mode'
+        'nv unset interface {port} bridge domain br_default access {segmentation_id}',
+        'nv conf apply'
     )
