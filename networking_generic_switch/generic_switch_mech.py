@@ -377,7 +377,15 @@ class GenericSwitchDriver(api.MechanismDriver):
                            'segmentation_id': segmentation_id})
                 # Move port to network
                 if is_802_3ad and hasattr(switch, 'plug_bond_to_network'):
-                    switch.plug_bond_to_network(port_id, segmentation_id)
+                    local_group_info = binding_profile.get(
+                        "local_group_information")
+                    bond_properties = {}
+                    if local_group_info:
+                        bond_properties = local_group_info.get(
+                            "bond_properties", {})
+                    switch.plug_bond_to_network(port_id,
+                                                segmentation_id,
+                                                **bond_properties)
                 else:
                     switch.plug_port_to_network(port_id, segmentation_id)
                 LOG.info("Successfully plugged port %(port_id)s in segment "
@@ -602,7 +610,15 @@ class GenericSwitchDriver(api.MechanismDriver):
                        'segmentation_id': segmentation_id})
             try:
                 if is_802_3ad and hasattr(switch, 'unplug_bond_from_network'):
-                    switch.unplug_bond_from_network(port_id, segmentation_id)
+                    local_group_info = binding_profile.get(
+                        "local_group_information")
+                    bond_properties = {}
+                    if local_group_info:
+                        bond_properties = local_group_info.get(
+                            "bond_properties", {})
+                    switch.unplug_bond_from_network(port_id,
+                                                    segmentation_id,
+                                                    **bond_properties)
                 else:
                     switch.delete_port(port_id, segmentation_id)
             except Exception as e:
