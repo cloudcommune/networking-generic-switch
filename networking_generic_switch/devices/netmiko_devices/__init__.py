@@ -229,10 +229,17 @@ class NetmikoSwitch(devices.GenericSwitchDevice):
                 self.DELETE_PORT,
                 port=port,
                 segmentation_id=ngs_port_default_vlan)
-        cmds += self._format_commands(
-            self.PLUG_PORT_TO_NETWORK,
-            port=port,
-            segmentation_id=segmentation_id)
+        ngs_pxe_vlan = self._get_pxe_vlan()
+        if ngs_pxe_vlan == int(segmentation_id):
+            cmds += self._format_commands(
+                self.PLUG_PORT_TO_NETWORK_PXE,
+                port=port,
+                segmentation_id=segmentation_id)
+        else:
+            cmds += self._format_commands(
+                self.PLUG_PORT_TO_NETWORK,
+                port=port,
+                segmentation_id=segmentation_id)
         return self.send_commands_to_device(cmds)
 
     @check_output('unplug port')
@@ -251,7 +258,11 @@ class NetmikoSwitch(devices.GenericSwitchDevice):
                 port=port,
                 segmentation_id=ngs_port_default_vlan)
         if self._disable_inactive_ports() and self.DISABLE_PORT:
-            cmds += self._format_commands(self.DISABLE_PORT, port=port)
+            ngs_pxe_vlan = self._get_pxe_vlan()
+            if ngs_pxe_vlan == segmentation_id:
+                cmds += self._format_commands(self.DISABLE_PORT_PXE, port=port)
+            else:
+                cmds += self._format_commands(self.DISABLE_PORT, port=port)
         return self.send_commands_to_device(cmds)
 
     def send_config_set(self, net_connect, cmd_set):

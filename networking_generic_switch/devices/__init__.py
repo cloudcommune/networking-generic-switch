@@ -35,6 +35,7 @@ NGS_INTERNAL_OPTS = [
     {'name': 'ngs_ssh_connect_timeout', 'default': 60},
     {'name': 'ngs_ssh_connect_interval', 'default': 10},
     {'name': 'ngs_max_connections', 'default': 1},
+    {'name': 'ngs_pxe_vlan', 'default': 1},
     {'name': 'ngs_switchport_mode', 'default': 'access'},
     # If True, disable switch ports that are not in use.
     {'name': 'ngs_disable_inactive_ports', 'default': False},
@@ -92,6 +93,10 @@ class GenericSwitchDevice(object):
     def _get_port_default_vlan(self):
         """Return a default vlan of switch's interface if you specify."""
         return self.ngs_config.get('ngs_port_default_vlan', None)
+
+    def _get_pxe_vlan(self):
+        """Return a pxe vlan if you specify."""
+        return int(self.ngs_config.get('ngs_pxe_vlan', 1))
 
     def _get_physical_networks(self):
         """Return a list of physical networks mapped to this switch."""
